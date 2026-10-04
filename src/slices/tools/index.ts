@@ -1,6 +1,6 @@
 /**
  * Tools slice for pi-jev-hud.
- * Registers `jev_decide` tool allowing direct structured classification with automatic top-left HUD modal.
+ * Registers `jev_decide` tool allowing direct structured classification with automatic top-right non-blocking HUD monitor.
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -9,7 +9,7 @@ import type { PluginState } from "../../shared/state.js";
 import { recordDecision } from "../../shared/state.js";
 import type { HudTab, JevDecision } from "../../shared/types.js";
 
-export type ShowOverlayFn = (ctx: ExtensionContext, tab?: HudTab) => Promise<void>;
+export type ShowPassiveFn = (tab?: HudTab) => void;
 
 const JevDecideSchema = Type.Object({
 	state: Type.Object(
@@ -37,12 +37,12 @@ const JevDecideSchema = Type.Object({
 export function registerTools(
 	pi: ExtensionAPI,
 	state: PluginState,
-	showOverlay?: ShowOverlayFn,
+	showPassive?: ShowPassiveFn,
 ): void {
 	pi.registerTool({
 		name: "jev_decide",
 		description:
-			"Evaluate structured decisions, risk assessment, and categorical classifications using the Jev System One classifier on OpenRouter. Results are automatically displayed in the top-left HUD modal.",
+			"Evaluate structured decisions, risk assessment, and categorical classifications using the Jev System One classifier on OpenRouter. Results are automatically displayed in the top-right HUD modal.",
 		parameters: JevDecideSchema,
 		handler: async (args: any, ctx: ExtensionContext) => {
 			const startTime = Date.now();
@@ -94,9 +94,9 @@ export function registerTools(
 
 			recordDecision(state, decision);
 
-			// Automatically pop up top-left HUD if enabled and in TUI mode
-			if (state.autoPopup && ctx.hasUI && ctx.mode === "tui" && showOverlay) {
-				showOverlay(ctx, "decision").catch(() => {});
+			// Trigger non-blocking passive HUD update on the right
+			if (state.autoPopup && showPassive) {
+				showPassive("decision");
 			}
 
 			if (result.stopReason !== "stop") {

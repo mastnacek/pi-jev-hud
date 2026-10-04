@@ -1,26 +1,26 @@
 /**
  * Lifecycle pipeline listeners for pi-jev-hud.
- * Intercepts tool executions and provider queries to update the HUD and state.
+ * Intercepts tool executions and provider queries to update the top-right monitoring HUD non-blockingly.
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { PluginState } from "../../shared/state.js";
 import { recordDecision, recordQuery } from "../../shared/state.js";
 import type { HudTab, JevDecision, QueryEvent } from "../../shared/types.js";
 
-export type ShowOverlayFn = (ctx: ExtensionContext, tab?: HudTab) => Promise<void>;
+export type ShowPassiveFn = (tab?: HudTab) => void;
 
 export function registerPipelineListeners(
 	pi: ExtensionAPI,
 	state: PluginState,
 	track: (fn: () => void) => void,
-	showOverlay?: ShowOverlayFn,
+	showPassive?: ShowPassiveFn,
 ): void {
 	const pendingQueries = new Map<string, { startTime: number; model: string; provider: string }>();
 
 	// Track before provider request (primary chat model querying)
 	track(
-		pi.on("before_provider_request", async (event, ctx) => {
+		pi.on("before_provider_request", async (event) => {
 			const queryId = `q_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 			const model = (event as any)?.model?.id ?? (event as any)?.modelId ?? "unknown";
 			const provider = (event as any)?.model?.provider ?? (event as any)?.provider ?? "unknown";
@@ -55,8 +55,8 @@ export function registerPipelineListeners(
 
 			recordQuery(state, queryItem);
 
-			if (state.queryPopup && ctx.hasUI && ctx.mode === "tui" && showOverlay) {
-				showOverlay(ctx, "query").catch(() => {});
+			if (state.queryPopup && showPassive) {
+				showPassive("query");
 			}
 		}),
 	);
@@ -67,18 +67,20 @@ export function registerPipelineListeners(
 			if (state.lastQuery && state.lastQuery.status === "pending") {
 				state.lastQuery.status = "completed";
 				state.lastQuery.latencyMs = Date.now() - state.lastQuery.timestamp;
+				if (state.queryPopup && showPassive) {
+					showPassive("query");
+				}
 			}
 		}),
 	);
 
 	// Intercept tool results (codemode running classify)
 	track(
-		pi.on("tool_result", async (event, ctx) => {
+		pi.on("tool_result", async (event) => {
 			if (event.toolName === "codemode") {
 				try {
 					const code = typeof event.input === "object" && event.input && "code" in event.input ? String(event.input.code) : "";
 					if (code.includes("models.classify") || code.includes("jev")) {
-						// Extract answers if structured or parseable
 						const outputStr = typeof event.result === "string" ? event.result : JSON.stringify(event.result);
 						const decision: JevDecision = {
 							id: `dec_${Date.now()}`,
@@ -100,8 +102,8 @@ export function registerPipelineListeners(
 
 						recordDecision(state, decision);
 
-						if (state.autoPopup && ctx.hasUI && ctx.mode === "tui" && showOverlay) {
-							showOverlay(ctx, "decision").catch(() => {});
+						if (state.autoPopup && showPassive) {
+							showPassive("decision");
 						}
 					}
 				} catch {

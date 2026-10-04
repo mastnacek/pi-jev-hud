@@ -6,7 +6,7 @@
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { PluginState } from "../../shared/state.js";
-import type { HudTab, JevDecision, QueryEvent } from "../../shared/types.js";
+import type { HudTab } from "../../shared/types.js";
 import { stringsFor } from "../../shared/i18n.js";
 
 export function fitLineToWidth(line: string, maxWidth: number, ellipsis = "…"): string {
@@ -16,16 +16,16 @@ export function fitLineToWidth(line: string, maxWidth: number, ellipsis = "…")
 	return truncateToWidth(line, maxWidth, ellipsis);
 }
 
-function renderProgressBar(ratio: number, length = 10): string {
+function renderProgressBar(ratio: number, length = 8): string {
 	const clamped = Math.max(0, Math.min(1, ratio));
-	const filledCount = Math.round(clamped * length);
-	const emptyCount = length - filledCount;
-	return "█".repeat(filledCount) + "░".repeat(emptyCount);
+	const filled = Math.round(clamped * length);
+	return "█".repeat(filled) + "░".repeat(length - filled);
 }
 
 export interface JevHudComponentOptions {
 	initialTab?: HudTab;
 	onRunTest?: () => Promise<void>;
+	isPassive?: boolean;
 }
 
 export class JevHudComponent implements Component {
@@ -33,16 +33,17 @@ export class JevHudComponent implements Component {
 	private state: PluginState;
 	private theme: any;
 	private tui: TUI;
-	private done: (result?: any) => void;
+	private done?: (result?: any) => void;
 	private onRunTest?: () => Promise<void>;
 	private testRunning = false;
 	private testStatusMessage = "";
+	public isPassive = false;
 
 	constructor(
 		tui: TUI,
 		theme: any,
 		state: PluginState,
-		done: (result?: any) => void,
+		done?: (result?: any) => void,
 		options?: JevHudComponentOptions,
 	) {
 		this.tui = tui;
@@ -53,11 +54,19 @@ export class JevHudComponent implements Component {
 			this.activeTab = options.initialTab;
 		}
 		this.onRunTest = options?.onRunTest;
+		this.isPassive = options?.isPassive ?? false;
+	}
+
+	public setTab(tab: HudTab): void {
+		this.activeTab = tab;
+		this.tui.requestRender();
 	}
 
 	public handleInput(data: string): boolean {
+		if (this.isPassive) return false;
+
 		if (matchesKey(data, "escape") || matchesKey(data, "q")) {
-			this.done();
+			this.done?.();
 			return true;
 		}
 
@@ -77,23 +86,9 @@ export class JevHudComponent implements Component {
 			return true;
 		}
 
-		if (data === "1") {
-			this.activeTab = "decision";
-			this.tui.requestRender();
-			return true;
-		}
-		if (data === "2") {
-			this.activeTab = "query";
-			this.tui.requestRender();
-			return true;
-		}
-		if (data === "3") {
-			this.activeTab = "history";
-			this.tui.requestRender();
-			return true;
-		}
-		if (data === "4") {
-			this.activeTab = "config";
+		if (data === "1" || data === "2" || data === "3" || data === "4") {
+			const tabs: HudTab[] = ["decision", "query", "history", "config"];
+			this.activeTab = tabs[Number(data) - 1]!;
 			this.tui.requestRender();
 			return true;
 		}
@@ -135,7 +130,7 @@ export class JevHudComponent implements Component {
 	public render(width: number): string[] {
 		const s = stringsFor(this.state.lang);
 		const th = this.theme;
-		const innerWidth = Math.max(30, width - 2);
+		const innerWidth = Math.max(28, width - 2);
 
 		const pad = (text: string, len: number) => {
 			const vlen = visibleWidth(text);
@@ -144,24 +139,18 @@ export class JevHudComponent implements Component {
 		};
 
 		const row = (content: string) => {
-			const fitted = pad(` ${content} `, innerWidth);
 			const border = th?.fg ? th.fg("accent", "│") : "│";
-			return `${border}${fitted}${border}`;
+			return `${border}${pad(` ${content} `, innerWidth)}${border}`;
 		};
 
 		const lines: string[] = [];
-
-		// Header top border
-		const topTitle = ` ⚖️ JEV DECISION & QUERY HUD `;
-		const topBorderChar = "─";
+		const topTitle = this.isPassive ? ` ⚖️ JEV MONITOR [Top-Right] ` : ` ⚖️ JEV HUD [Top-Right] `;
 		const leftTop = th?.fg ? th.fg("accent", "┌─") : "┌─";
 		const rightTop = th?.fg ? th.fg("accent", "┐") : "┐";
 		const titleStyled = th?.style ? th.style(topTitle, { bold: true, fg: "accent" }) : topTitle;
 		const borderRemainder = Math.max(0, innerWidth - visibleWidth(topTitle) - 2);
-		const topBorder = `${leftTop}${titleStyled}${topBorderChar.repeat(borderRemainder)}${rightTop}`;
-		lines.push(fitLineToWidth(topBorder, width));
+		lines.push(fitLineToWidth(`${leftTop}${titleStyled}${"─".repeat(borderRemainder)}${rightTop}`, width));
 
-		// Tab Bar
 		const tabLabels: { key: HudTab; label: string; num: string }[] = [
 			{ key: "decision", label: s.tabDecision, num: "1" },
 			{ key: "query", label: s.tabQuery, num: "2" },
@@ -181,36 +170,24 @@ export class JevHudComponent implements Component {
 			.join(" ");
 		lines.push(fitLineToWidth(row(renderedTabs), width));
 
-		// Divider
 		const divBorder = (th?.fg ? th.fg("accent", "├") : "├") + "─".repeat(innerWidth) + (th?.fg ? th.fg("accent", "┤") : "┤");
 		lines.push(fitLineToWidth(divBorder, width));
 
-		// Content based on active tab
-		if (this.activeTab === "decision") {
-			this.renderDecisionTab(lines, row, width, s, th);
-		} else if (this.activeTab === "query") {
-			this.renderQueryTab(lines, row, width, s, th);
-		} else if (this.activeTab === "history") {
-			this.renderHistoryTab(lines, row, width, s, th);
-		} else if (this.activeTab === "config") {
-			this.renderConfigTab(lines, row, width, s, th);
-		}
+		if (this.activeTab === "decision") this.renderDecisionTab(lines, row, width, s, th);
+		else if (this.activeTab === "query") this.renderQueryTab(lines, row, width, s, th);
+		else if (this.activeTab === "history") this.renderHistoryTab(lines, row, width, s, th);
+		else if (this.activeTab === "config") this.renderConfigTab(lines, row, width, s, th);
 
-		if (this.testStatusMessage) {
-			lines.push(fitLineToWidth(row(this.testStatusMessage), width));
-		}
+		if (this.testStatusMessage) lines.push(fitLineToWidth(row(this.testStatusMessage), width));
 
-		// Divider before footer
 		lines.push(fitLineToWidth(divBorder, width));
-
-		// Footer Key Hints
-		const footerText = th?.fg ? th.fg("dim", s.keysHint) : s.keysHint;
+		const footerText = this.isPassive
+			? th?.fg ? th.fg("dim", "⚡ Non-blocking monitor (active in background)") : "⚡ Non-blocking monitor"
+			: th?.fg ? th.fg("dim", s.keysHint) : s.keysHint;
 		lines.push(fitLineToWidth(row(footerText), width));
 
-		// Bottom Border
 		const botBorder = (th?.fg ? th.fg("accent", "└") : "└") + "─".repeat(innerWidth) + (th?.fg ? th.fg("accent", "┘") : "┘");
 		lines.push(fitLineToWidth(botBorder, width));
-
 		return lines;
 	}
 
@@ -218,55 +195,46 @@ export class JevHudComponent implements Component {
 		const dec = this.state.lastDecision;
 		if (!dec) {
 			lines.push(fitLineToWidth(row(th?.fg ? th.fg("dim", s.noDecisionsYet) : s.noDecisionsYet), width));
-			lines.push(fitLineToWidth(row("💡 Tip: Press [T] to run a live test decision!"), width));
+			lines.push(fitLineToWidth(row("💡 Monitoring active. Waiting for decisions..."), width));
 			return;
 		}
 
-		// Model and latency header line
 		const modelStr = `${s.targetModel} ${th?.style ? th.style(dec.model, { bold: true }) : dec.model}`;
 		const latStr = `${s.latency} ${dec.latencyMs}ms`;
 		const costStr = dec.costUsd !== undefined ? `${s.cost} $${dec.costUsd.toFixed(6)}` : "";
-		lines.push(fitLineToWidth(row(`${modelStr}  ${latStr}  ${costStr}`), width));
+		lines.push(fitLineToWidth(row(`${modelStr} ${latStr} ${costStr}`), width));
 
-		// State snapshot snippet
 		const stateKeys = Object.keys(dec.state);
 		if (stateKeys.length > 0) {
-			const stateSummary = stateKeys.map((k) => `${k}: ${JSON.stringify(dec.state[k])}`).join(" | ");
-			lines.push(fitLineToWidth(row(`${s.stateSummary} ${th?.fg ? th.fg("dim", stateSummary) : stateSummary}`), width));
+			const summary = stateKeys.map((k) => `${k}: ${JSON.stringify(dec.state[k])}`).join(" | ");
+			lines.push(fitLineToWidth(row(`${s.stateSummary} ${th?.fg ? th.fg("dim", summary) : summary}`), width));
 		}
 
-		// Questions and results
 		const qKeys = Object.keys(dec.answers || {});
 		for (const qKey of qKeys) {
 			const ans = dec.answers[qKey];
 			if (!ans) continue;
 
-			let answerBadge = "";
-			let probBar = "";
-
+			let badge = "";
+			let bar = "";
 			if (ans.type === "bool") {
 				const isTrue = ans.value === true || (typeof ans.probability === "number" && ans.probability >= 0.5);
 				const prob = ans.probability ?? (isTrue ? 1 : 0);
-				const bar = renderProgressBar(prob, 8);
-				const badgeColor = isTrue ? "warning" : "success";
-				const label = isTrue ? "⚠️ TRUE" : "✅ FALSE";
-				answerBadge = th?.style ? th.style(label, { bold: true, fg: badgeColor }) : label;
-				probBar = `[${bar}] ${(prob * 100).toFixed(0)}%`;
+				badge = th?.style ? th.style(isTrue ? "⚠️ TRUE" : "✅ FALSE", { bold: true, fg: isTrue ? "warning" : "success" }) : (isTrue ? "TRUE" : "FALSE");
+				bar = `[${renderProgressBar(prob)}] ${(prob * 100).toFixed(0)}%`;
 			} else if (ans.type === "choice") {
-				const choiceStr = String(ans.choice || ans.value || "");
+				const choice = String(ans.choice || ans.value || "");
 				const conf = ans.confidence ?? 0.8;
-				const bar = renderProgressBar(conf, 8);
-				const badgeColor = choiceStr.toLowerCase().includes("risk") || choiceStr.toLowerCase().includes("crit") ? "error" : "accent";
-				answerBadge = th?.style ? th.style(`🎯 ${choiceStr.toUpperCase()}`, { bold: true, fg: badgeColor }) : `🎯 ${choiceStr}`;
-				probBar = `[${bar}] ${(conf * 100).toFixed(0)}% conf`;
+				const isRisk = choice.toLowerCase().includes("risk") || choice.toLowerCase().includes("crit");
+				badge = th?.style ? th.style(`🎯 ${choice.toUpperCase()}`, { bold: true, fg: isRisk ? "error" : "accent" }) : `🎯 ${choice}`;
+				bar = `[${renderProgressBar(conf)}] ${(conf * 100).toFixed(0)}% conf`;
 			} else if (ans.type === "score") {
-				const score = ans.score ?? ans.value ?? 0;
-				answerBadge = th?.style ? th.style(`🔢 SCORE ${score}`, { bold: true, fg: "accent" }) : `🔢 SCORE ${score}`;
+				badge = th?.style ? th.style(`🔢 SCORE ${ans.score ?? ans.value ?? 0}`, { bold: true, fg: "accent" }) : `SCORE ${ans.score}`;
 			} else {
-				answerBadge = JSON.stringify(ans);
+				badge = JSON.stringify(ans);
 			}
 
-			lines.push(fitLineToWidth(row(`❓ ${th?.style ? th.style(qKey, { bold: true }) : qKey} ➔ ${answerBadge}  ${probBar}`), width));
+			lines.push(fitLineToWidth(row(`❓ ${th?.style ? th.style(qKey, { bold: true }) : qKey} ➔ ${badge} ${bar}`), width));
 		}
 	}
 
@@ -276,12 +244,9 @@ export class JevHudComponent implements Component {
 			lines.push(fitLineToWidth(row(th?.fg ? th.fg("dim", s.noQueriesYet) : s.noQueriesYet), width));
 			return;
 		}
-
 		lines.push(fitLineToWidth(row(`🎯 Provider: ${query.provider} | Model: ${query.model}`), width));
-		if (query.latencyMs) {
-			lines.push(fitLineToWidth(row(`⚡ Latency: ${query.latencyMs}ms | Status: ${query.status ?? "completed"}`), width));
-		}
-		lines.push(fitLineToWidth(row(`📝 Prompt snippet: ${th?.fg ? th.fg("dim", query.promptSnippet) : query.promptSnippet}`), width));
+		if (query.latencyMs) lines.push(fitLineToWidth(row(`⚡ Latency: ${query.latencyMs}ms | Status: ${query.status ?? "completed"}`), width));
+		lines.push(fitLineToWidth(row(`📝 Prompt: ${th?.fg ? th.fg("dim", query.promptSnippet) : query.promptSnippet}`), width));
 	}
 
 	private renderHistoryTab(lines: string[], row: (c: string) => string, width: number, s: any, th: any): void {
@@ -289,10 +254,8 @@ export class JevHudComponent implements Component {
 			lines.push(fitLineToWidth(row(th?.fg ? th.fg("dim", s.noDecisionsYet) : s.noDecisionsYet), width));
 			return;
 		}
-
 		lines.push(fitLineToWidth(row(`📜 Recent Decisions (${this.state.decisionHistory.length}):`), width));
-		const recent = this.state.decisionHistory.slice(0, 5);
-		recent.forEach((item, i) => {
+		this.state.decisionHistory.slice(0, 5).forEach((item, i) => {
 			const timeStr = new Date(item.timestamp).toLocaleTimeString();
 			const qSummary = Object.keys(item.answers || {})
 				.map((k) => `${k}: ${item.answers[k]?.choice || item.answers[k]?.value || JSON.stringify(item.answers[k])}`)

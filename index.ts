@@ -1,14 +1,15 @@
 /**
  * pi-jev-hud — Pi coding agent extension.
  *
- * Composition root only: registers listeners, wires slices,
- * drains listeners on session_shutdown, and guards against subagent recursion.
+ * Composition root: wires slices, provides top-right non-blocking monitoring
+ * overlay & interactive modal, and drains listeners on session_shutdown.
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { TUI } from "@earendil-works/pi-tui";
 import { createInitialState, recordDecision } from "./src/shared/state.js";
 import type { HudTab, JevDecision } from "./src/shared/types.js";
-import { openJevHudModal } from "./src/slices/overlay/index.js";
+import { hidePassiveMonitoringHud, openJevHudModal, updatePassiveMonitoringHud } from "./src/slices/overlay/index.js";
 import { registerCommands } from "./src/slices/commands/index.js";
 import { registerTools } from "./src/slices/tools/index.js";
 import { registerPipelineListeners } from "./src/slices/pipeline/index.js";
@@ -28,6 +29,9 @@ export default function (pi: ExtensionAPI): void {
 	const track = (result: unknown): void => {
 		if (typeof result === "function") unsubscribers.push(result as () => void);
 	};
+
+	let activeTui: TUI | null = null;
+	let activeTheme: any = null;
 
 	const runTest = async (ctx: ExtensionContext): Promise<JevDecision> => {
 		const startTime = Date.now();
@@ -87,7 +91,13 @@ export default function (pi: ExtensionAPI): void {
 		return decision;
 	};
 
-	const showOverlay = async (ctx: ExtensionContext, tab?: HudTab): Promise<void> => {
+	const showPassive = (tab: HudTab = "decision"): void => {
+		if (activeTui && activeTheme && state.enabled) {
+			updatePassiveMonitoringHud(activeTui, activeTheme, state, tab);
+		}
+	};
+
+	const showModal = async (ctx: ExtensionContext, tab?: HudTab): Promise<void> => {
 		await openJevHudModal(ctx, state, {
 			initialTab: tab,
 			onRunTest: async () => {
@@ -96,13 +106,27 @@ export default function (pi: ExtensionAPI): void {
 		});
 	};
 
+	// Track session start and grab TUI / theme references for non-blocking overlay
+	track(
+		pi.on("session_start", async (_event, ctx) => {
+			if (ctx.hasUI && ctx.mode === "tui") {
+				ctx.ui.setWidget("jev-hud-bridge", (tui, theme) => {
+					activeTui = tui;
+					activeTheme = theme;
+					return undefined as any;
+				});
+			}
+		}),
+	);
+
 	// Wire slices
-	registerCommands(pi, state, showOverlay, runTest);
-	registerTools(pi, state, showOverlay);
-	registerPipelineListeners(pi, state, track, showOverlay);
+	registerCommands(pi, state, showModal, runTest);
+	registerTools(pi, state, showPassive);
+	registerPipelineListeners(pi, state, track, showPassive);
 
 	// Drain all listeners on session shutdown
 	pi.on("session_shutdown", async () => {
+		hidePassiveMonitoringHud();
 		while (unsubscribers.length > 0) {
 			unsubscribers.pop()?.();
 		}
