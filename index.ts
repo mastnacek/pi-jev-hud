@@ -6,7 +6,7 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { TUI } from "@earendil-works/pi-tui";
+import type { Component, TUI } from "@earendil-works/pi-tui";
 import { createInitialState, recordDecision } from "./src/shared/state.js";
 import type { HudTab, JevDecision } from "./src/shared/types.js";
 import { hidePassiveMonitoringHud, openJevHudModal, updatePassiveMonitoringHud } from "./src/slices/overlay/index.js";
@@ -17,6 +17,22 @@ import { registerPipelineListeners } from "./src/slices/pipeline/index.js";
 /** Subagent recursion guard: avoid duplicating hooks in child sessions. */
 function isDelegatedSession(): boolean {
 	return process.env.PI_SUBAGENT === "true" || Boolean(process.env.PI_CHILD_SESSION);
+}
+
+/**
+ * Empty component used only as a vehicle to obtain the TUI/theme references.
+ * `setWidget` renders its factory result inside a Container, so returning
+ * `undefined` makes `Container.render` call `.render()` on undefined and
+ * hard-crashes the TUI.
+ */
+class NoopWidgetComponent implements Component {
+	render(_width: number): string[] {
+		return [];
+	}
+
+	invalidate(): void {
+		// no cached state
+	}
 }
 
 export default function (pi: ExtensionAPI): void {
@@ -113,7 +129,7 @@ export default function (pi: ExtensionAPI): void {
 				ctx.ui.setWidget("jev-hud-bridge", (tui, theme) => {
 					activeTui = tui;
 					activeTheme = theme;
-					return undefined as any;
+					return new NoopWidgetComponent();
 				});
 			}
 		}),

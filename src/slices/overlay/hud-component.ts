@@ -191,6 +191,11 @@ export class JevHudComponent implements Component {
 		return lines;
 	}
 
+	/** Component contract: no cached render state, every frame rebuilds. */
+	public invalidate(): void {
+		// no cached state
+	}
+
 	private renderDecisionTab(lines: string[], row: (c: string) => string, width: number, s: any, th: any): void {
 		const dec = this.state.lastDecision;
 		if (!dec) {
