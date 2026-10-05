@@ -1,6 +1,6 @@
 /**
  * Slash commands for pi-jev-hud.
- * Provides /jev-hud with subcommands: show, test, auto, query, history, lang.
+ * Provides /jev-hud with display-only controls: show, hide, toggle, test, auto, query, history, lang.
  */
 
 import type { AutocompleteItem, ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -8,13 +8,15 @@ import type { PluginState } from "../../shared/state.js";
 import type { HudTab, JevDecision } from "../../shared/types.js";
 import { LOCALES, normalizeLocale, stringsFor } from "../../shared/i18n.js";
 
-export type ShowOverlayFn = (ctx: ExtensionContext, tab?: HudTab) => Promise<void>;
+export type ShowPassiveFn = (tab?: HudTab) => void;
+export type HidePassiveFn = () => void;
 export type RunTestFn = (ctx: ExtensionContext) => Promise<JevDecision>;
 
 export function registerCommands(
 	pi: ExtensionAPI,
 	state: PluginState,
-	showOverlay?: ShowOverlayFn,
+	showPassive?: ShowPassiveFn,
+	hidePassive?: HidePassiveFn,
 	runTest?: RunTestFn,
 ): void {
 	const initialStrings = stringsFor(state.lang);
@@ -26,9 +28,11 @@ export function registerCommands(
 			const trimmed = args.trimStart();
 
 			// Subcommand completions
-			if (!trimmed || (!trimmed.includes(" ") && !"auto".startsWith(trimmed) && !"query".startsWith(trimmed) && !"lang".startsWith(trimmed))) {
+			if (!trimmed || (!trimmed.includes(" ") && !"show".startsWith(trimmed) && !"auto".startsWith(trimmed) && !"query".startsWith(trimmed) && !"lang".startsWith(trimmed))) {
 				const items: AutocompleteItem[] = [
 					{ value: "show", label: "show", description: s.showDesc },
+					{ value: "hide", label: "hide", description: s.hideDesc },
+					{ value: "toggle", label: "toggle", description: s.toggleDesc },
 					{ value: "test", label: "test", description: s.testDesc },
 					{
 						value: "auto ",
@@ -48,6 +52,16 @@ export function registerCommands(
 					},
 				];
 				return items.filter((it) => it.value.trim().startsWith(trimmed));
+			}
+
+			// Subcommand: show [tab]
+			if (trimmed.startsWith("show")) {
+				return [
+					{ value: "show decision", label: "show decision", description: s.showDecisionDesc },
+					{ value: "show query", label: "show query", description: s.showQueryDesc },
+					{ value: "show history", label: "show history", description: s.showHistoryDesc },
+					{ value: "show config", label: "show config", description: s.showConfigDesc },
+				];
 			}
 
 			// Subcommand: auto [on|off]
@@ -99,10 +113,26 @@ export function registerCommands(
 			const sub = (subcmd || "show").toLowerCase();
 
 			if (sub === "show") {
-				if (showOverlay && ctx.hasUI && ctx.mode === "tui") {
-					await showOverlay(ctx, "decision");
+				const tabParam = (rest[0]?.toLowerCase() as HudTab) || "decision";
+				const tab: HudTab = ["decision", "query", "history", "config"].includes(tabParam) ? tabParam : "decision";
+				if (showPassive) {
+					showPassive(tab);
 				} else {
 					ctx.ui.notify(s.status(state.enabled), "info");
+				}
+				return;
+			}
+
+			if (sub === "hide") {
+				if (hidePassive) {
+					hidePassive();
+				}
+				return;
+			}
+
+			if (sub === "toggle") {
+				if (showPassive) {
+					showPassive("decision");
 				}
 				return;
 			}
@@ -113,8 +143,8 @@ export function registerCommands(
 					try {
 						await runTest(ctx);
 						ctx.ui.notify(s.testSuccess, "info");
-						if (showOverlay && ctx.hasUI && ctx.mode === "tui") {
-							await showOverlay(ctx, "decision");
+						if (showPassive) {
+							showPassive("decision");
 						}
 					} catch (err: any) {
 						ctx.ui.notify(s.testError(err.message || String(err)), "error");

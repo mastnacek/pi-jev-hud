@@ -1,10 +1,10 @@
 /**
  * TUI Overlay HUD Component for JEV Decisions and LLM Queries.
- * Width-safe rendering with box drawing, theme styling, and emoji badges.
+ * Pure display-only component — zero keyboard listeners, zero focus capture.
  */
 
 import type { Component, TUI } from "@earendil-works/pi-tui";
-import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { PluginState } from "../../shared/state.js";
 import type { HudTab } from "../../shared/types.js";
 import { stringsFor } from "../../shared/i18n.js";
@@ -24,8 +24,6 @@ function renderProgressBar(ratio: number, length = 8): string {
 
 export interface JevHudComponentOptions {
 	initialTab?: HudTab;
-	onRunTest?: () => Promise<void>;
-	isPassive?: boolean;
 }
 
 export class JevHudComponent implements Component {
@@ -33,101 +31,24 @@ export class JevHudComponent implements Component {
 	private state: PluginState;
 	private theme: any;
 	private tui: TUI;
-	private done?: (result?: any) => void;
-	private onRunTest?: () => Promise<void>;
-	private testRunning = false;
-	private testStatusMessage = "";
-	public isPassive = false;
 
 	constructor(
 		tui: TUI,
 		theme: any,
 		state: PluginState,
-		done?: (result?: any) => void,
 		options?: JevHudComponentOptions,
 	) {
 		this.tui = tui;
 		this.theme = theme;
 		this.state = state;
-		this.done = done;
 		if (options?.initialTab) {
 			this.activeTab = options.initialTab;
-		}
-		this.onRunTest = options?.onRunTest;
-		this.isPassive = options?.isPassive ?? false;
-		if (this.isPassive) {
-			delete (this as any).handleInput;
 		}
 	}
 
 	public setTab(tab: HudTab): void {
 		this.activeTab = tab;
 		this.tui.requestRender();
-	}
-
-	public handleInput(data: string): boolean {
-		if (this.isPassive) return false;
-
-		if (matchesKey(data, "escape") || matchesKey(data, "q")) {
-			this.done?.();
-			return true;
-		}
-
-		if (matchesKey(data, "tab") || matchesKey(data, "right")) {
-			const tabs: HudTab[] = ["decision", "query", "history", "config"];
-			const idx = tabs.indexOf(this.activeTab);
-			this.activeTab = tabs[(idx + 1) % tabs.length]!;
-			this.tui.requestRender();
-			return true;
-		}
-
-		if (matchesKey(data, "left")) {
-			const tabs: HudTab[] = ["decision", "query", "history", "config"];
-			const idx = tabs.indexOf(this.activeTab);
-			this.activeTab = tabs[(idx - 1 + tabs.length) % tabs.length]!;
-			this.tui.requestRender();
-			return true;
-		}
-
-		if (data === "1" || data === "2" || data === "3" || data === "4") {
-			const tabs: HudTab[] = ["decision", "query", "history", "config"];
-			this.activeTab = tabs[Number(data) - 1]!;
-			this.tui.requestRender();
-			return true;
-		}
-
-		if (data.toLowerCase() === "a") {
-			this.state.autoPopup = !this.state.autoPopup;
-			this.tui.requestRender();
-			return true;
-		}
-
-		if (data.toLowerCase() === "p") {
-			this.state.queryPopup = !this.state.queryPopup;
-			this.tui.requestRender();
-			return true;
-		}
-
-		if (data.toLowerCase() === "t" && this.onRunTest && !this.testRunning) {
-			this.testRunning = true;
-			this.testStatusMessage = stringsFor(this.state.lang).testInitiated;
-			this.tui.requestRender();
-			this.onRunTest()
-				.then(() => {
-					this.testRunning = false;
-					this.testStatusMessage = stringsFor(this.state.lang).testSuccess;
-					this.activeTab = "decision";
-					this.tui.requestRender();
-				})
-				.catch((err) => {
-					this.testRunning = false;
-					this.testStatusMessage = stringsFor(this.state.lang).testError(err.message || String(err));
-					this.tui.requestRender();
-				});
-			return true;
-		}
-
-		return false;
 	}
 
 	public render(width: number): string[] {
@@ -147,24 +68,24 @@ export class JevHudComponent implements Component {
 		};
 
 		const lines: string[] = [];
-		const topTitle = this.isPassive ? ` ⚖️ JEV MONITOR [Top-Right] ` : ` ⚖️ JEV HUD [Top-Right] `;
+		const topTitle = ` ⚖️ JEV DISPLAY MONITOR `;
 		const leftTop = th?.fg ? th.fg("accent", "┌─") : "┌─";
 		const rightTop = th?.fg ? th.fg("accent", "┐") : "┐";
 		const titleStyled = th?.style ? th.style(topTitle, { bold: true, fg: "accent" }) : topTitle;
 		const borderRemainder = Math.max(0, innerWidth - visibleWidth(topTitle) - 2);
 		lines.push(fitLineToWidth(`${leftTop}${titleStyled}${"─".repeat(borderRemainder)}${rightTop}`, width));
 
-		const tabLabels: { key: HudTab; label: string; num: string }[] = [
-			{ key: "decision", label: s.tabDecision, num: "1" },
-			{ key: "query", label: s.tabQuery, num: "2" },
-			{ key: "history", label: s.tabHistory, num: "3" },
-			{ key: "config", label: s.tabConfig, num: "4" },
+		const tabLabels: { key: HudTab; label: string }[] = [
+			{ key: "decision", label: s.tabDecision },
+			{ key: "query", label: s.tabQuery },
+			{ key: "history", label: s.tabHistory },
+			{ key: "config", label: s.tabConfig },
 		];
 
 		const renderedTabs = tabLabels
 			.map((t) => {
 				const isCurrent = this.activeTab === t.key;
-				const labelText = `[${t.num}.${t.label}]`;
+				const labelText = `[${t.label}]`;
 				if (isCurrent) {
 					return th?.style ? th.style(labelText, { bold: true, fg: "success", bg: "toolSuccessBg" }) : `*${labelText}*`;
 				}
@@ -181,12 +102,8 @@ export class JevHudComponent implements Component {
 		else if (this.activeTab === "history") this.renderHistoryTab(lines, row, width, s, th);
 		else if (this.activeTab === "config") this.renderConfigTab(lines, row, width, s, th);
 
-		if (this.testStatusMessage) lines.push(fitLineToWidth(row(this.testStatusMessage), width));
-
 		lines.push(fitLineToWidth(divBorder, width));
-		const footerText = this.isPassive
-			? th?.fg ? th.fg("dim", "⚡ Non-blocking monitor (active in background)") : "⚡ Non-blocking monitor"
-			: th?.fg ? th.fg("dim", s.keysHint) : s.keysHint;
+		const footerText = th?.fg ? th.fg("dim", "⚡ Non-blocking display (/jev-hud show|hide)") : "⚡ Non-blocking display";
 		lines.push(fitLineToWidth(row(footerText), width));
 
 		const botBorder = (th?.fg ? th.fg("accent", "└") : "└") + "─".repeat(innerWidth) + (th?.fg ? th.fg("accent", "┘") : "┘");
@@ -203,7 +120,7 @@ export class JevHudComponent implements Component {
 		const dec = this.state.lastDecision;
 		if (!dec) {
 			lines.push(fitLineToWidth(row(th?.fg ? th.fg("dim", s.noDecisionsYet) : s.noDecisionsYet), width));
-			lines.push(fitLineToWidth(row("💡 Monitoring active. Waiting for decisions..."), width));
+			lines.push(fitLineToWidth(row("💡 Waiting for JEV classifier decisions..."), width));
 			return;
 		}
 
@@ -273,10 +190,10 @@ export class JevHudComponent implements Component {
 	}
 
 	private renderConfigTab(lines: string[], row: (c: string) => string, width: number, s: any, th: any): void {
-		lines.push(fitLineToWidth(row(`⚙️ HUD Settings & Controls:`), width));
-		lines.push(fitLineToWidth(row(`[A] ${s.autoPopup(this.state.autoPopup)}`), width));
-		lines.push(fitLineToWidth(row(`[P] ${s.queryPopup(this.state.queryPopup)}`), width));
-		lines.push(fitLineToWidth(row(`[T] Run test JEV classification`), width));
-		lines.push(fitLineToWidth(row(`🌐 Current language: ${this.state.lang.toUpperCase()} (/jev-hud lang [en|cs])`), width));
+		lines.push(fitLineToWidth(row(`⚙️ HUD Settings & Status:`), width));
+		lines.push(fitLineToWidth(row(`• Auto-popup on decisions: ${this.state.autoPopup ? "ON" : "OFF"}`), width));
+		lines.push(fitLineToWidth(row(`• Auto-popup on queries: ${this.state.queryPopup ? "ON" : "OFF"}`), width));
+		lines.push(fitLineToWidth(row(`• Language: ${this.state.lang.toUpperCase()}`), width));
+		lines.push(fitLineToWidth(row(`• Run /jev-hud show [tab] to switch view`), width));
 	}
 }

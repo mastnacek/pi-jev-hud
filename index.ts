@@ -2,14 +2,14 @@
  * pi-jev-hud — Pi coding agent extension.
  *
  * Composition root: wires slices, provides top-right non-blocking monitoring
- * overlay & interactive modal, and drains listeners on session_shutdown.
+ * display overlay, and drains listeners on session_shutdown.
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import { createInitialState, recordDecision } from "./src/shared/state.js";
 import type { HudTab, JevDecision } from "./src/shared/types.js";
-import { hidePassiveMonitoringHud, openJevHudModal, updatePassiveMonitoringHud } from "./src/slices/overlay/index.js";
+import { hidePassiveMonitoringHud, updatePassiveMonitoringHud } from "./src/slices/overlay/index.js";
 import { registerCommands } from "./src/slices/commands/index.js";
 import { registerTools } from "./src/slices/tools/index.js";
 import { registerPipelineListeners } from "./src/slices/pipeline/index.js";
@@ -113,13 +113,8 @@ export default function (pi: ExtensionAPI): void {
 		}
 	};
 
-	const showModal = async (ctx: ExtensionContext, tab?: HudTab): Promise<void> => {
-		await openJevHudModal(ctx, state, {
-			initialTab: tab,
-			onRunTest: async () => {
-				await runTest(ctx);
-			},
-		});
+	const hidePassive = (): void => {
+		hidePassiveMonitoringHud();
 	};
 
 	// Track session start and grab TUI / theme references for non-blocking overlay
@@ -136,7 +131,7 @@ export default function (pi: ExtensionAPI): void {
 	);
 
 	// Wire slices
-	registerCommands(pi, state, showModal, runTest);
+	registerCommands(pi, state, showPassive, hidePassive, runTest);
 	registerTools(pi, state, showPassive);
 	registerPipelineListeners(pi, state, track, showPassive);
 

@@ -8,7 +8,7 @@ import type { JevDecision, QueryEvent } from "../src/shared/types.js";
 test("state kernel records decisions correctly", () => {
 	const state = createInitialState();
 	assert.equal(state.decisionHistory.length, 0);
-	assert.equal(state.autoPopup, true);
+	assert.equal(state.autoPopup, false);
 
 	const sampleDecision: JevDecision = {
 		id: "dec_1",
