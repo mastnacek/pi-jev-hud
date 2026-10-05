@@ -55,6 +55,9 @@ export class JevHudComponent implements Component {
 		}
 		this.onRunTest = options?.onRunTest;
 		this.isPassive = options?.isPassive ?? false;
+		if (this.isPassive) {
+			delete (this as any).handleInput;
+		}
 	}
 
 	public setTab(tab: HudTab): void {

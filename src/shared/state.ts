@@ -25,7 +25,7 @@ export function createInitialState(): PluginState {
 	return {
 		enabled: true,
 		lang: DEFAULT_LOCALE,
-		autoPopup: true,
+		autoPopup: false,
 		queryPopup: false,
 		lastRunTimestamp: 0,
 		lastDecision: null,

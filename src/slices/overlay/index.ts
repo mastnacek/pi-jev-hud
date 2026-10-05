@@ -74,6 +74,8 @@ export function updatePassiveMonitoringHud(
 	}
 
 	if (!passiveOverlayHandle) {
+		const currentFocus = (tui as any).getFocusedComponent ? (tui as any).getFocusedComponent() : null;
+
 		passiveComponent = new JevHudComponent(tui, theme, state, undefined, {
 			initialTab: tab,
 			isPassive: true,
@@ -86,6 +88,10 @@ export function updatePassiveMonitoringHud(
 			maxHeight: 18,
 			margin: { top: 1, right: 2 },
 		});
+
+		if (currentFocus && (tui as any).setFocus) {
+			(tui as any).setFocus(currentFocus);
+		}
 	} else if (passiveComponent) {
 		passiveComponent.setTab(tab);
 		tui.requestRender();
