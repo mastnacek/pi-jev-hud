@@ -44,7 +44,7 @@ export function registerTools(
 		description:
 			"Evaluate structured decisions, risk assessment, and categorical classifications using the Jev System One classifier on OpenRouter. Results are automatically displayed in the top-right HUD modal.",
 		parameters: JevDecideSchema,
-		handler: async (args: any, ctx: ExtensionContext) => {
+		execute: async (args: any, ctx: ExtensionContext) => {
 			const startTime = Date.now();
 			const modelSlug = args.model || "typesafe/jev-1.13";
 			const provider = modelSlug.includes("/") ? modelSlug.split("/")[0] : "openrouter";
